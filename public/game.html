@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ultimate Tic Tac Toe - Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #timer, #currentPlayer {
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+    #gameControls {
+      margin-bottom: 10px;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 5px;
+    }
+    .mini-board {
+      border: 2px solid #333;
+      padding: 5px;
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      grid-template-rows: repeat(3, 40px);
+      gap: 2px;
+      position: relative;
+    }
+    .cell {
+      width: 40px;
+      height: 40px;
+      border: 1px solid #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .cell.disabled {
+      cursor: not-allowed;
+      background-color: #eee;
+    }
+    .mini-board.active {
+      border-color: green;
+    }
+    .winner-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      font-weight: bold;
+      color: red;
+    }
+    #symbolSelection {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Ultimate Tic Tac Toe</h1>
+  <div id="timer">Time remaining: <span id="timeRemaining">--:--</span></div>
+  <div id="currentPlayer"></div>
+  
+  <!-- Gombok az új játék és szimbólum csere indításához -->
+  <div id="gameControls" style="display: none;">
+    <button id="newGameBtn">New Game</button>
+    <button id="swapSymbolsBtn">Swap Symbols</button>
+  </div>
+  
+  <!-- Join Game felület, ha még nincs kiválasztva szimbólum -->
+  <div id="symbolSelection" style="display: none;">
+    <p>Click "Join Game" to join. (First player is automatically assigned X.)</p>
+    <button id="joinGameBtn">Join Game</button>
+  </div>
+  
+  <div id="gameContainer" style="display: none;">
+    <div>Current turn: <span id="currentTurn"></span></div>
+    <div id="board" class="board"></div>
+  </div>
+  
+  <script>
+    const sessionId = window.location.pathname.split('/').pop();
+    let playerId = localStorage.getItem('playerId_' + sessionId);
+    if (!playerId) {
+      playerId = Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('playerId_' + sessionId, playerId);
+    }
+    let playerSymbol = localStorage.getItem('playerSymbol_' + sessionId);
+    let gameState = null;
+    let gameOverShown = false; // Flag a popup egyszeri megjelenítéséhez
+
+    function renderTimer(remainingMs) {
+      const seconds = Math.floor(remainingMs / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      document.getElementById('timeRemaining').innerText = `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function createBoard() {
+      const boardDiv = document.getElementById('board');
+      boardDiv.innerHTML = '';
+      for (let i = 0; i < 9; i++) {
+        const miniBoardDiv = document.createElement('div');
+        miniBoardDiv.className = 'mini-board';
+        miniBoardDiv.dataset.boardIndex = i;
+        for (let j = 0; j < 9; j++) {
+          const cellDiv = document.createElement('div');
+          cellDiv.className = 'cell';
+          cellDiv.dataset.cellIndex = j;
+          cellDiv.addEventListener('click', () => handleCellClick(i, j));
+          miniBoardDiv.appendChild(cellDiv);
+        }
+        boardDiv.appendChild(miniBoardDiv);
+      }
+    }
+
+    async function fetchGameState() {
+      const response = await fetch(`/api/session/${sessionId}/state`);
+      if (response.ok) {
+        gameState = await response.json();
+        // Frissítsük a saját szimbólumot a szerver alapján
+        if (gameState.players) {
+          if (gameState.players.X === playerId && playerSymbol !== 'X') {
+            playerSymbol = 'X';
+            localStorage.setItem('playerSymbol_' + sessionId, 'X');
+          }
+          if (gameState.players.O === playerId && playerSymbol !== 'O') {
+            playerSymbol = 'O';
+            localStorage.setItem('playerSymbol_' + sessionId, 'O');
+          }
+        }
+        updateBoard();
+        updateTurn();
+        checkGameOver();
+      }
+    }
+
+    async function fetchTimer() {
+      const response = await fetch(`/api/session/${sessionId}/timer`);
+      if (response.ok) {
+        const data = await response.json();
+        renderTimer(data.remainingMs);
+      }
+    }
+
+    function updateTurn() {
+      document.getElementById('currentTurn').innerText = gameState.turn || '-';
+      document.getElementById('currentPlayer').innerText = playerSymbol ? `You are playing as: ${playerSymbol}` : '';
+    }
+
+    function updateBoard() {
+      const miniBoards = document.querySelectorAll('.mini-board');
+      miniBoards.forEach(miniBoard => {
+        const boardIndex = parseInt(miniBoard.dataset.boardIndex);
+        if (gameState.activeBoard === -1 || gameState.activeBoard === boardIndex) {
+          miniBoard.classList.add('active');
+        } else {
+          miniBoard.classList.remove('active');
+        }
+        miniBoard.querySelectorAll('.winner-overlay').forEach(el => el.remove());
+        if (gameState.boardWinners[boardIndex]) {
+          const overlay = document.createElement('div');
+          overlay.className = 'winner-overlay';
+          overlay.innerText = gameState.boardWinners[boardIndex];
+          miniBoard.appendChild(overlay);
+        }
+        const cells = miniBoard.querySelectorAll('.cell');
+        const boardData = gameState.boards[boardIndex];
+        cells.forEach((cell, idx) => {
+          cell.innerText = boardData[idx] || '';
+          if ((gameState.activeBoard !== -1 && gameState.activeBoard !== boardIndex) || boardData[idx] || gameState.overallWinner) {
+            cell.classList.add('disabled');
+          } else {
+            cell.classList.remove('disabled');
+          }
+        });
+      });
+    }
+
+    async function handleCellClick(boardIndex, cellIndex) {
+      if (gameState.overallWinner) {
+        alert("Game is over!");
+        return;
+      }
+      if (gameState.turn !== playerSymbol) {
+        alert("It's not your turn!");
+        return;
+      }
+      if (gameState.activeBoard !== -1 && gameState.activeBoard !== boardIndex) {
+        alert("You must play in the highlighted board.");
+        return;
+      }
+      const response = await fetch(`/api/session/${sessionId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boardIndex, cellIndex, symbol: playerSymbol })
+      });
+      if (response.ok) {
+        gameState = await response.json();
+        updateBoard();
+        updateTurn();
+        checkGameOver();
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Move failed");
+      }
+    }
+
+    function checkGameOver() {
+      if (gameState.overallWinner && !gameOverShown) {
+        alert("Game over! Winner: " + gameState.overallWinner);
+        gameOverShown = true;
+      }
+    }
+
+    async function joinGame() {
+      const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        playerSymbol = data.assignedSymbol;
+        localStorage.setItem('playerSymbol_' + sessionId, playerSymbol);
+        document.getElementById('symbolSelection').style.display = 'none';
+        document.getElementById('gameContainer').style.display = 'block';
+        document.getElementById('gameControls').style.display = 'block';
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to join game");
+      }
+    }
+
+    document.getElementById('joinGameBtn').addEventListener('click', joinGame);
+
+    document.getElementById('newGameBtn').addEventListener('click', async () => {
+      const response = await fetch(`/api/session/${sessionId}/new-game`, { method: 'POST' });
+      if (response.ok) {
+        gameState = await response.json();
+        gameOverShown = false; // Új játék esetén visszaállítjuk a flaget
+        updateBoard();
+        updateTurn();
+      } else {
+        alert("Failed to start a new game");
+      }
+    });
+
+    document.getElementById('swapSymbolsBtn').addEventListener('click', async () => {
+      const response = await fetch(`/api/session/${sessionId}/swap-symbols`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Frissítsük a saját szimbólumot a szerver állapota alapján
+        if(data.state.players.X === playerId) {
+          playerSymbol = 'X';
+          localStorage.setItem('playerSymbol_' + sessionId, 'X');
+        } else if(data.state.players.O === playerId) {
+          playerSymbol = 'O';
+          localStorage.setItem('playerSymbol_' + sessionId, 'O');
+        }
+        updateTurn();
+      } else {
+        alert("Failed to swap symbols");
+      }
+    });
+
+    // Kezdeti renderelés
+    createBoard();
+    if (playerSymbol) {
+      document.getElementById('gameContainer').style.display = 'block';
+      document.getElementById('gameControls').style.display = 'block';
+    } else {
+      document.getElementById('symbolSelection').style.display = 'block';
+    }
+
+    setInterval(fetchGameState, 1000);
+    setInterval(fetchTimer, 1000);
+    fetchGameState();
+    fetchTimer();
+  </script>
+</body>
+</html>

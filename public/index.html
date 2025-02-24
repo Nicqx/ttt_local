@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ultimate Tic Tac Toe - Home</title>
+</head>
+<body>
+  <h1>Ultimate Tic Tac Toe</h1>
+  <button id="newGameBtn">New Game</button>
+  <script>
+    document.getElementById('newGameBtn').addEventListener('click', async () => {
+      const response = await fetch('/api/new-session', { method: 'POST' });
+      const data = await response.json();
+      if(data.sessionId) {
+        window.location.href = `/${data.sessionId}`;
+      } else {
+        alert('Error creating new game session.');
+      }
+    });
+  </script>
+</body>
+</html>

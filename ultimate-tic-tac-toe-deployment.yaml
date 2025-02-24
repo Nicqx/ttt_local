@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ultimate-tic-tac-toe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ultimate-tic-tac-toe
+  template:
+    metadata:
+      labels:
+        app: ultimate-tic-tac-toe
+    spec:
+      containers:
+      - name: ultimate-tic-tac-toe
+        image: ultimate-tic-tac-toe:latest
+        ports:
+        - containerPort: 8090
+          hostPort: 8090
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ultimate-tic-tac-toe-service
+spec:
+  type: ClusterIP
+  selector:
+    app: ultimate-tic-tac-toe
+  ports:
+  - protocol: TCP
+    port: 8090
+    targetPort: 8090
