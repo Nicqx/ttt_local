@@ -50,6 +50,10 @@ function checkOverallWinner(boardWinners) {
 app.post('/api/new-session', async (req, res) => {
   const sessionId = Math.floor(10000 + Math.random() * 90000).toString();
   const gameState = initializeGameState();
+  // Ha a local=true paraméter szerepel, állítsuk be a játékosokat alapértelmezetten
+  if (req.query.local === 'true') {
+    gameState.players = { X: "X", O: "O" };
+  }
   await redisClient.set(sessionId, JSON.stringify(gameState), { EX: 3600 });
   res.json({ sessionId });
 });
@@ -208,10 +212,12 @@ app.post('/api/session/:sessionId/swap-symbols', async (req, res) => {
   if (!state.players || (!state.players.X && !state.players.O)) {
     return res.status(400).json({ error: "A játékosok nincsenek még hozzárendelve" });
   }
+  // Szimbólumok cseréje
   const temp = state.players.X;
   state.players.X = state.players.O;
   state.players.O = temp;
-  state.turn = (state.turn === 'X' ? 'O' : 'X');
+  // Kényszerítjük, hogy a swap után a kezdő turn legyen X
+  state.turn = "X";
   await redisClient.set(sessionId, JSON.stringify(state), { EX: 3600 });
   res.json({ swapped: true, state });
 });

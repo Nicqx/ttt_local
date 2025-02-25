@@ -4,6 +4,8 @@ metadata:
   name: ultimate-tic-tac-toe
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: ultimate-tic-tac-toe

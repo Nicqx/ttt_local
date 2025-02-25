@@ -3,13 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <title>Ultimate Tic Tac Toe - Kezdőoldal</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
   <h1>Ultimate Tic Tac Toe</h1>
-  <button id="newGameBtn">Új Játék</button>
+  <!-- Local mód esetén a new-session API-t a ?local=true paraméterrel hívjuk -->
+  <button id="newGameBtn">Új Játék (local mód)</button>
   <script>
     document.getElementById('newGameBtn').addEventListener('click', async () => {
-      const response = await fetch('/api/new-session', { method: 'POST' });
+      const response = await fetch('/api/new-session?local=true', { method: 'POST' });
       const data = await response.json();
       if(data.sessionId) {
         // Átirányítás: a sessionID közvetlenül a gyökér után szerepel

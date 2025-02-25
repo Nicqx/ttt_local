@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Ultimate Tic Tac Toe - Játék</title>
+  <title>Ultimate Tic Tac Toe - Játék (Remote mód)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -18,7 +18,7 @@
     h1 {
       margin-bottom: 10px;
     }
-    #timer, #currentPlayer {
+    #timer, #currentTurnDisplay, #yourSymbolDisplay {
       font-size: 20px;
       margin-bottom: 10px;
     }
@@ -83,45 +83,130 @@
 <body>
   <h1>Ultimate Tic Tac Toe</h1>
   <div id="timer">Hátralévő idő: <span id="timeRemaining">--:--</span></div>
-  <div id="currentPlayer"></div>
-  
-  <!-- Gombok: Új játék, Szimbólum csere -->
+  <div id="currentTurnDisplay">Aktuális kör: <span id="currentTurn"></span></div>
+  <div id="yourSymbolDisplay"></div>
+
+  <!-- Gombok: Új Játék (Reset), Új Session, Szimbólumok Csere -->
   <div id="gameControls">
-    <button id="newGameBtn">Új Játék</button>
+    <button id="resetBoardBtn">Új Játék (Reset)</button>
+    <button id="newSessionBtn">Új Session</button>
     <button id="swapSymbolsBtn">Szimbólumok Csere</button>
   </div>
-  
+
   <!-- Játéktér -->
-  <div id="gameContainer">
-    <div>Aktuális kör: <span id="currentTurn"></span></div>
-    <div id="board" class="board"></div>
-  </div>
-  
+  <div id="board" class="board"></div>
+
   <!-- Használati útmutató -->
   <div id="usageGuide">
     <h3>Használati útmutató</h3>
     <ul>
       <li>A játék 9 kisebb amőbából áll, melyek egy 3x3-as nagy táblát alkotnak.</li>
-      <li>Az első játékos automatikusan X-et kap, a második O-t.</li>
-      <li>Egy mini tábla megnyerése után a táblán belüli pozíció alapján a következő aktív mini tábla kerül kiválasztásra.</li>
+      <li>Remote módban: az első csatlakozó játékos X-et, a második O-t kapja – mindig az X játékos kezd.</li>
+      <li>Egy mini tábla nyerése után a benne lévő pozíció alapján kerül kiválasztásra a következő aktív mini tábla.</li>
       <li>Ha az aktív mini tábla kitelt vagy már nyerték, bárhol lehet lépni.</li>
       <li>A nagy játék akkor dől el, ha egy játékos három mini táblát nyer vízszintesen, függőlegesen vagy átlósan.</li>
-      <li>Az "Új Játék" gomb törli a jelenlegi táblát és újraindítja a játékot, X-lel kezdve.</li>
-      <li>A "Szimbólumok Csere" gomb megcseréli a két játékos által választott jeleket.</li>
+      <li>A "Új Játék (Reset)" gomb törli a jelenlegi táblát, és X-lel indítja újra a játékot.</li>
+      <li>A "Új Session" gomb új sessiont hoz létre – ebben az új sessionben az első csatlakozó X-et, a második O-t kapja –, majd átirányítja a böngészőt az új URL-re.</li>
+      <li>A "Szimbólumok Csere" gomb megcseréli a két játékos által kapott jeleket, és a swap után kényszerítjük, hogy a kezdő turn mindig X legyen.</li>
+      <li>Remote módban csak a saját körében lehet lépni; ha nem az Ön köre, figyelmeztetés jelenik meg.</li>
     </ul>
   </div>
-  
+
   <script>
-    const sessionId = window.location.pathname.split('/').pop();
+    // A sessionId az URL utolsó része
+    let sessionId = window.location.pathname.split('/').pop();
+    let gameState = null;
+    let gameOverShown = false;
+    // isLocal flag: ha a backendben players objektum { X:"X", O:"O" } van, akkor local módban vagyunk
+    let isLocal = false;
+
+    // Remote módban tárolt játékosazonosító és szimbólum
     let playerId = localStorage.getItem('playerId_' + sessionId);
     if (!playerId) {
       playerId = Math.random().toString(36).substr(2, 9);
       localStorage.setItem('playerId_' + sessionId, playerId);
     }
-    // Mostantól automatikusan csatlakozunk, nincs join felület
     let playerSymbol = localStorage.getItem('playerSymbol_' + sessionId);
-    let gameState = null;
-    let gameOverShown = false; // A "Játék vége" popup egyszeri megjelenítéséhez
+
+    // Automatikus csatlakozás remote módban, ha még nincs playerSymbol
+    async function autoJoinGame() {
+      if (!playerSymbol) {
+        const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          playerSymbol = data.assignedSymbol;
+          localStorage.setItem('playerSymbol_' + sessionId, playerSymbol);
+          updateYourSymbolDisplay();
+          updateTurn();
+        } else {
+          alert("Nem sikerült csatlakozni a játékhoz");
+        }
+      }
+    }
+
+    // Frissíti a saját szimbólum kijelzését
+    function updateYourSymbolDisplay() {
+      const display = document.getElementById('yourSymbolDisplay');
+      if (isLocal) {
+        display.innerText = "Local mód: két játékos";
+      } else {
+        display.innerText = playerSymbol ? `Ön játszik: ${playerSymbol}` : '';
+      }
+    }
+
+    // "Új Session" gomb (remote módban)
+    document.getElementById('newSessionBtn').addEventListener('click', async () => {
+      const response = await fetch('/api/new-session', { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        sessionId = data.sessionId;
+        window.location.href = "/" + sessionId;
+      } else {
+        alert("Nem sikerült új sessiont indítani");
+      }
+    });
+
+    // "Új Játék (Reset)" gomb: üríti a táblát az aktuális sessionben
+    document.getElementById('resetBoardBtn').addEventListener('click', async () => {
+      const response = await fetch(`/api/session/${sessionId}/new-game`, { method: 'POST' });
+      if (response.ok) {
+        gameState = await response.json();
+        gameOverShown = false;
+        updateBoard();
+        updateTurn();
+      } else {
+        alert("Nem sikerült új játékot indítani");
+      }
+    });
+
+    // "Szimbólumok Csere" gomb: megcseréli a két játékos szimbólumát, majd kényszeríti, hogy a kezdő turn "X" legyen
+    document.getElementById('swapSymbolsBtn').addEventListener('click', async () => {
+      const response = await fetch(`/api/session/${sessionId}/swap-symbols`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Remote módban frissítjük a saját szimbólumot a szerver állapota alapján
+        if (!isLocal) {
+          if (data.state.players.X === playerId) {
+            playerSymbol = 'X';
+            localStorage.setItem('playerSymbol_' + sessionId, 'X');
+          } else if (data.state.players.O === playerId) {
+            playerSymbol = 'O';
+            localStorage.setItem('playerSymbol_' + sessionId, 'O');
+          }
+        }
+        updateYourSymbolDisplay();
+        updateTurn();
+      } else {
+        alert("Nem sikerült megcserélni a szimbólumokat");
+      }
+    });
 
     function renderTimer(remainingMs) {
       const seconds = Math.floor(remainingMs / 1000);
@@ -152,16 +237,25 @@
       const response = await fetch(`/api/session/${sessionId}/state`);
       if (response.ok) {
         gameState = await response.json();
-        // Ha a szerver már hozzárendelte a szimbólumot, frissítjük a tárolt értéket
-        if (gameState.players) {
-          if (gameState.players.X === playerId && playerSymbol !== 'X') {
-            playerSymbol = 'X';
-            localStorage.setItem('playerSymbol_' + sessionId, 'X');
+        // Határozzuk meg, hogy local módban vagyunk-e:
+        if (gameState.players && gameState.players.X === "X" && gameState.players.O === "O") {
+          isLocal = true;
+        } else {
+          isLocal = false;
+        }
+        // Remote módban, ha már vannak játékosok, frissítsük a saját szimbólumot, ha szükséges:
+        if (!isLocal && gameState.players) {
+          if (gameState.players.X === playerId && playerSymbol !== "X") {
+            playerSymbol = "X";
+            localStorage.setItem('playerSymbol_' + sessionId, "X");
+          } else if (gameState.players.O === playerId && playerSymbol !== "O") {
+            playerSymbol = "O";
+            localStorage.setItem('playerSymbol_' + sessionId, "O");
           }
-          if (gameState.players.O === playerId && playerSymbol !== 'O') {
-            playerSymbol = 'O';
-            localStorage.setItem('playerSymbol_' + sessionId, 'O');
-          }
+        }
+        // Ha remote módban még nincs playerSymbol, automatikusan csatlakozunk
+        if (!isLocal && !playerSymbol) {
+          autoJoinGame();
         }
         updateBoard();
         updateTurn();
@@ -179,7 +273,7 @@
 
     function updateTurn() {
       document.getElementById('currentTurn').innerText = gameState.turn || '-';
-      document.getElementById('currentPlayer').innerText = playerSymbol ? `Ön játszik: ${playerSymbol}` : '';
+      updateYourSymbolDisplay();
     }
 
     function updateBoard() {
@@ -216,18 +310,19 @@
         alert("A játék véget ért!");
         return;
       }
-      if (gameState.turn !== playerSymbol) {
+      // Remote módban: csak akkor lehet lépni, ha az Ön szimbóluma egyezik a jelenlegi körrel
+      if (!isLocal && gameState.turn !== playerSymbol) {
         alert("Nem az Ön köre!");
         return;
       }
       if (gameState.activeBoard !== -1 && gameState.activeBoard !== boardIndex) {
-        alert("A kijelölt mini tábla szerint kell lépni!");
+        alert("A kijelölt mini táblán kell lépni!");
         return;
       }
       const response = await fetch(`/api/session/${sessionId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ boardIndex, cellIndex, symbol: playerSymbol })
+        body: JSON.stringify({ boardIndex, cellIndex, symbol: isLocal ? gameState.turn : playerSymbol })
       });
       if (response.ok) {
         gameState = await response.json();
@@ -236,7 +331,7 @@
         checkGameOver();
       } else {
         const errorData = await response.json();
-        alert(errorData.error || "Hiba a lépés leadása során");
+        alert(errorData.error || "Hiba a lépés során");
       }
     }
 
@@ -247,66 +342,15 @@
       }
     }
 
-    // Automatikusan csatlakozunk a játékhoz, ha még nincs szimbólum
-    async function autoJoinGame() {
-      if (!playerSymbol) {
-        const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerId })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          playerSymbol = data.assignedSymbol;
-          localStorage.setItem('playerSymbol_' + sessionId, playerSymbol);
-          updateTurn();
-        } else {
-          const errorData = await response.json();
-          alert(errorData.error || "Nem sikerült csatlakozni a játékhoz");
-        }
-      }
+    function startGame() {
+      createBoard();
+      setInterval(fetchGameState, 1000);
+      setInterval(fetchTimer, 1000);
+      fetchGameState();
+      fetchTimer();
     }
 
-    document.getElementById('newGameBtn').addEventListener('click', async () => {
-      const response = await fetch(`/api/session/${sessionId}/new-game`, { method: 'POST' });
-      if (response.ok) {
-        gameState = await response.json();
-        gameOverShown = false;
-        updateBoard();
-        updateTurn();
-      } else {
-        alert("Nem sikerült új játékot indítani");
-      }
-    });
-
-    document.getElementById('swapSymbolsBtn').addEventListener('click', async () => {
-      const response = await fetch(`/api/session/${sessionId}/swap-symbols`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // Frissítjük a saját szimbólumot a szerver alapján
-        if(data.state.players.X === playerId) {
-          playerSymbol = 'X';
-          localStorage.setItem('playerSymbol_' + sessionId, 'X');
-        } else if(data.state.players.O === playerId) {
-          playerSymbol = 'O';
-          localStorage.setItem('playerSymbol_' + sessionId, 'O');
-        }
-        updateTurn();
-      } else {
-        alert("Nem sikerült megcserélni a szimbólumokat");
-      }
-    });
-
-    // Kezdeti renderelés
-    createBoard();
-    autoJoinGame(); // Automatikus csatlakozás, ha nincs szimbólum
-    setInterval(fetchGameState, 1000);
-    setInterval(fetchTimer, 1000);
-    fetchGameState();
-    fetchTimer();
+    startGame();
   </script>
 </body>
 </html>
