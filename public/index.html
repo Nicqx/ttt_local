@@ -2,19 +2,20 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Ultimate Tic Tac Toe - Home</title>
+  <title>Ultimate Tic Tac Toe - Kezdőoldal</title>
 </head>
 <body>
   <h1>Ultimate Tic Tac Toe</h1>
-  <button id="newGameBtn">New Game</button>
+  <button id="newGameBtn">Új Játék</button>
   <script>
     document.getElementById('newGameBtn').addEventListener('click', async () => {
       const response = await fetch('/api/new-session', { method: 'POST' });
       const data = await response.json();
       if(data.sessionId) {
+        // Átirányítás: a sessionID közvetlenül a gyökér után szerepel
         window.location.href = `/${data.sessionId}`;
       } else {
-        alert('Error creating new game session.');
+        alert('Hiba az új játékmenet létrehozása során.');
       }
     });
   </script>

@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Ultimate Tic Tac Toe - Game</title>
+  <title>Ultimate Tic Tac Toe - Játék</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -70,31 +70,45 @@
       font-weight: bold;
       color: red;
     }
-    #symbolSelection {
-      margin-bottom: 10px;
+    #usageGuide {
+      margin-top: 20px;
+      border-top: 1px solid #ccc;
+      padding-top: 10px;
+      font-size: 14px;
+      text-align: left;
+      width: 100%;
     }
   </style>
 </head>
 <body>
   <h1>Ultimate Tic Tac Toe</h1>
-  <div id="timer">Time remaining: <span id="timeRemaining">--:--</span></div>
+  <div id="timer">Hátralévő idő: <span id="timeRemaining">--:--</span></div>
   <div id="currentPlayer"></div>
   
-  <!-- Gombok az új játék és szimbólum csere indításához -->
-  <div id="gameControls" style="display: none;">
-    <button id="newGameBtn">New Game</button>
-    <button id="swapSymbolsBtn">Swap Symbols</button>
+  <!-- Gombok: Új játék, Szimbólum csere -->
+  <div id="gameControls">
+    <button id="newGameBtn">Új Játék</button>
+    <button id="swapSymbolsBtn">Szimbólumok Csere</button>
   </div>
   
-  <!-- Join Game felület, ha még nincs kiválasztva szimbólum -->
-  <div id="symbolSelection" style="display: none;">
-    <p>Click "Join Game" to join. (First player is automatically assigned X.)</p>
-    <button id="joinGameBtn">Join Game</button>
-  </div>
-  
-  <div id="gameContainer" style="display: none;">
-    <div>Current turn: <span id="currentTurn"></span></div>
+  <!-- Játéktér -->
+  <div id="gameContainer">
+    <div>Aktuális kör: <span id="currentTurn"></span></div>
     <div id="board" class="board"></div>
+  </div>
+  
+  <!-- Használati útmutató -->
+  <div id="usageGuide">
+    <h3>Használati útmutató</h3>
+    <ul>
+      <li>A játék 9 kisebb amőbából áll, melyek egy 3x3-as nagy táblát alkotnak.</li>
+      <li>Az első játékos automatikusan X-et kap, a második O-t.</li>
+      <li>Egy mini tábla megnyerése után a táblán belüli pozíció alapján a következő aktív mini tábla kerül kiválasztásra.</li>
+      <li>Ha az aktív mini tábla kitelt vagy már nyerték, bárhol lehet lépni.</li>
+      <li>A nagy játék akkor dől el, ha egy játékos három mini táblát nyer vízszintesen, függőlegesen vagy átlósan.</li>
+      <li>Az "Új Játék" gomb törli a jelenlegi táblát és újraindítja a játékot, X-lel kezdve.</li>
+      <li>A "Szimbólumok Csere" gomb megcseréli a két játékos által választott jeleket.</li>
+    </ul>
   </div>
   
   <script>
@@ -104,9 +118,10 @@
       playerId = Math.random().toString(36).substr(2, 9);
       localStorage.setItem('playerId_' + sessionId, playerId);
     }
+    // Mostantól automatikusan csatlakozunk, nincs join felület
     let playerSymbol = localStorage.getItem('playerSymbol_' + sessionId);
     let gameState = null;
-    let gameOverShown = false; // Flag a popup egyszeri megjelenítéséhez
+    let gameOverShown = false; // A "Játék vége" popup egyszeri megjelenítéséhez
 
     function renderTimer(remainingMs) {
       const seconds = Math.floor(remainingMs / 1000);
@@ -137,7 +152,7 @@
       const response = await fetch(`/api/session/${sessionId}/state`);
       if (response.ok) {
         gameState = await response.json();
-        // Frissítsük a saját szimbólumot a szerver alapján
+        // Ha a szerver már hozzárendelte a szimbólumot, frissítjük a tárolt értéket
         if (gameState.players) {
           if (gameState.players.X === playerId && playerSymbol !== 'X') {
             playerSymbol = 'X';
@@ -164,7 +179,7 @@
 
     function updateTurn() {
       document.getElementById('currentTurn').innerText = gameState.turn || '-';
-      document.getElementById('currentPlayer').innerText = playerSymbol ? `You are playing as: ${playerSymbol}` : '';
+      document.getElementById('currentPlayer').innerText = playerSymbol ? `Ön játszik: ${playerSymbol}` : '';
     }
 
     function updateBoard() {
@@ -198,15 +213,15 @@
 
     async function handleCellClick(boardIndex, cellIndex) {
       if (gameState.overallWinner) {
-        alert("Game is over!");
+        alert("A játék véget ért!");
         return;
       }
       if (gameState.turn !== playerSymbol) {
-        alert("It's not your turn!");
+        alert("Nem az Ön köre!");
         return;
       }
       if (gameState.activeBoard !== -1 && gameState.activeBoard !== boardIndex) {
-        alert("You must play in the highlighted board.");
+        alert("A kijelölt mini tábla szerint kell lépni!");
         return;
       }
       const response = await fetch(`/api/session/${sessionId}/move`, {
@@ -221,47 +236,46 @@
         checkGameOver();
       } else {
         const errorData = await response.json();
-        alert(errorData.error || "Move failed");
+        alert(errorData.error || "Hiba a lépés leadása során");
       }
     }
 
     function checkGameOver() {
       if (gameState.overallWinner && !gameOverShown) {
-        alert("Game over! Winner: " + gameState.overallWinner);
+        alert("Játék vége! Nyertes: " + gameState.overallWinner);
         gameOverShown = true;
       }
     }
 
-    async function joinGame() {
-      const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        playerSymbol = data.assignedSymbol;
-        localStorage.setItem('playerSymbol_' + sessionId, playerSymbol);
-        document.getElementById('symbolSelection').style.display = 'none';
-        document.getElementById('gameContainer').style.display = 'block';
-        document.getElementById('gameControls').style.display = 'block';
-      } else {
-        const errorData = await response.json();
-        alert(errorData.error || "Failed to join game");
+    // Automatikusan csatlakozunk a játékhoz, ha még nincs szimbólum
+    async function autoJoinGame() {
+      if (!playerSymbol) {
+        const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          playerSymbol = data.assignedSymbol;
+          localStorage.setItem('playerSymbol_' + sessionId, playerSymbol);
+          updateTurn();
+        } else {
+          const errorData = await response.json();
+          alert(errorData.error || "Nem sikerült csatlakozni a játékhoz");
+        }
       }
     }
-
-    document.getElementById('joinGameBtn').addEventListener('click', joinGame);
 
     document.getElementById('newGameBtn').addEventListener('click', async () => {
       const response = await fetch(`/api/session/${sessionId}/new-game`, { method: 'POST' });
       if (response.ok) {
         gameState = await response.json();
-        gameOverShown = false; // Új játék esetén visszaállítjuk a flaget
+        gameOverShown = false;
         updateBoard();
         updateTurn();
       } else {
-        alert("Failed to start a new game");
+        alert("Nem sikerült új játékot indítani");
       }
     });
 
@@ -272,7 +286,7 @@
       });
       if (response.ok) {
         const data = await response.json();
-        // Frissítsük a saját szimbólumot a szerver állapota alapján
+        // Frissítjük a saját szimbólumot a szerver alapján
         if(data.state.players.X === playerId) {
           playerSymbol = 'X';
           localStorage.setItem('playerSymbol_' + sessionId, 'X');
@@ -282,19 +296,13 @@
         }
         updateTurn();
       } else {
-        alert("Failed to swap symbols");
+        alert("Nem sikerült megcserélni a szimbólumokat");
       }
     });
 
     // Kezdeti renderelés
     createBoard();
-    if (playerSymbol) {
-      document.getElementById('gameContainer').style.display = 'block';
-      document.getElementById('gameControls').style.display = 'block';
-    } else {
-      document.getElementById('symbolSelection').style.display = 'block';
-    }
-
+    autoJoinGame(); // Automatikus csatlakozás, ha nincs szimbólum
     setInterval(fetchGameState, 1000);
     setInterval(fetchTimer, 1000);
     fetchGameState();

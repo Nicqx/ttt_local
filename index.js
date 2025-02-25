@@ -1,6 +1,5 @@
 const express = require('express');
 const { createClient } = require('redis');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 const app = express();
@@ -28,7 +27,7 @@ function initializeGameState() {
   };
 }
 
-// Ellenőrzi a nagytábla győzelmi feltételeit (3 mini tábla egymás mellett)
+// Overall nyertes ellenőrzése
 function checkOverallWinner(boardWinners) {
   const combos = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -60,7 +59,7 @@ app.get('/api/session/:sessionId/state', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   const state = JSON.parse(stateStr);
   res.json(state);
@@ -72,38 +71,33 @@ app.post('/api/session/:sessionId/move', async (req, res) => {
   const { boardIndex, cellIndex, symbol } = req.body;
 
   if (boardIndex < 0 || boardIndex > 8 || cellIndex < 0 || cellIndex > 8 || (symbol !== 'X' && symbol !== 'O')) {
-    return res.status(400).json({ error: "Invalid move parameters" });
+    return res.status(400).json({ error: "Érvénytelen lépés paraméterek" });
   }
 
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   let state = JSON.parse(stateStr);
 
-  // Ha a játék már véget ért, ne lehessen lépni
   if (state.overallWinner) {
-    return res.status(400).json({ error: "Game is already over" });
+    return res.status(400).json({ error: "A játék már véget ért" });
   }
 
   if (state.turn !== symbol) {
-    return res.status(400).json({ error: "Not your turn" });
+    return res.status(400).json({ error: "Nem az Ön köre" });
   }
 
-  // Ha van aktív mini tábla, csak arra lehet lépni
   if (state.activeBoard !== -1 && boardIndex !== state.activeBoard) {
-    return res.status(400).json({ error: "Move not allowed in this board" });
+    return res.status(400).json({ error: "Ezen a mini táblán nem lehet lépni" });
   }
   
-  // Ellenőrizzük, hogy az adott cella üres-e
   if (state.boards[boardIndex][cellIndex]) {
-    return res.status(400).json({ error: "Cell already occupied" });
+    return res.status(400).json({ error: "Ez a mező már foglalt" });
   }
 
-  // Léptetés végrehajtása
   state.boards[boardIndex][cellIndex] = symbol;
 
-  // Mini tábla nyerés ellenőrzése
   const board = state.boards[boardIndex];
   const winningCombos = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -117,49 +111,46 @@ app.post('/api/session/:sessionId/move', async (req, res) => {
     }
   }
 
-  // Következő aktív mini tábla meghatározása
   let nextActive = cellIndex;
   const nextBoard = state.boards[nextActive];
   const isBoardFull = nextBoard.every(cell => cell !== null);
   if (state.boardWinners[nextActive] || isBoardFull) {
-    state.activeBoard = -1; // szabad választás
+    state.activeBoard = -1;
   } else {
     state.activeBoard = nextActive;
   }
 
-  // Kör váltás
   state.turn = (state.turn === 'X') ? 'O' : 'X';
 
-  // Ellenőrizzük, hogy van-e overall győztes
   const overallWinner = checkOverallWinner(state.boardWinners);
   if (overallWinner) {
     state.overallWinner = overallWinner;
-    state.activeBoard = -2; // speciális marker a játék vége jelzésére
+    state.activeBoard = -2;
   }
 
   await redisClient.set(sessionId, JSON.stringify(state), { EX: 3600 });
   res.json(state);
 });
 
-// Visszaszámláló idő lekérése
+// Visszaszámláló lekérése
 app.get('/api/session/:sessionId/timer', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   const state = JSON.parse(stateStr);
   const remainingMs = state.expiresAt - Date.now();
   res.json({ remainingMs: remainingMs > 0 ? remainingMs : 0 });
 });
 
-// Szimbólum választás (automatikus kiosztás: az első játékos mindig X, a második O)
+// Szimbólum választás (automatikus kiosztás: első játékos X, második O)
 app.post('/api/session/:sessionId/select-symbol', async (req, res) => {
   const sessionId = req.params.sessionId;
   const { playerId } = req.body;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   let state = JSON.parse(stateStr);
   if (!state.players) {
@@ -180,19 +171,19 @@ app.post('/api/session/:sessionId/select-symbol', async (req, res) => {
   } else if (!state.players.X && state.players.O) {
     state.players.X = playerId;
   } else {
-    return res.status(400).json({ error: "Both symbols already taken" });
+    return res.status(400).json({ error: "Mindkét szimbólum már foglalt" });
   }
 
   await redisClient.set(sessionId, JSON.stringify(state), { EX: 3600 });
   res.json({ assignedSymbol: state.players.X === playerId ? "X" : "O", state });
 });
 
-// Új játék indítása (a táblák ürítése, overallWinner törlése, X kezdéssel)
+// Új játék indítása a sessionben
 app.post('/api/session/:sessionId/new-game', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   let state = JSON.parse(stateStr);
   state.boards = Array(9).fill(null).map(() => Array(9).fill(null));
@@ -211,11 +202,11 @@ app.post('/api/session/:sessionId/swap-symbols', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   let state = JSON.parse(stateStr);
   if (!state.players || (!state.players.X && !state.players.O)) {
-    return res.status(400).json({ error: "Players not assigned yet" });
+    return res.status(400).json({ error: "A játékosok nincsenek még hozzárendelve" });
   }
   const temp = state.players.X;
   state.players.X = state.players.O;
@@ -225,7 +216,7 @@ app.post('/api/session/:sessionId/swap-symbols', async (req, res) => {
   res.json({ swapped: true, state });
 });
 
-// Útvonal a game.html kiszolgálásához – a sessionId közvetlenül a gyökér után szerepel
+// Útvonal a game.html kiszolgálásához
 app.get('/:sessionId', (req, res, next) => {
   if (req.params.sessionId.startsWith('api')) {
     return next();
@@ -234,5 +225,5 @@ app.get('/:sessionId', (req, res, next) => {
 });
 
 app.listen(port, () => {
-  console.log(`Ultimate Tic Tac Toe server listening on port ${port}`);
+  console.log(`Ultimate Tic Tac Toe szerver fut a ${port} porton`);
 });
