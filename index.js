@@ -5,8 +5,16 @@ const path = require('path');
 const app = express();
 const port = 8090;
 
+// Alapértelmezett alútvonal, ahol az alkalmazás elérhető lesz
+const basePath = '/tic-tac-toe';
+
 app.use(express.json());
-app.use(express.static('public'));
+// Statikus fájlok kiszolgálása a basePath alatt, index.html-t automatikusan
+app.use(basePath, express.static('public', { index: 'index.html' }));
+// Explicit index route, ha a böngésző a /tic-tac-toe/ URL-t kéri
+app.get(basePath + '/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Redis kliens inicializálása
 const redisClient = createClient({
@@ -47,7 +55,7 @@ function checkOverallWinner(boardWinners) {
 }
 
 // Új session létrehozása (5 számjegyű session ID)
-app.post('/api/new-session', async (req, res) => {
+app.post(basePath + '/api/new-session', async (req, res) => {
   const sessionId = Math.floor(10000 + Math.random() * 90000).toString();
   const gameState = initializeGameState();
   // Ha a local=true paraméter szerepel, állítsuk be a játékosokat alapértelmezetten
@@ -59,7 +67,7 @@ app.post('/api/new-session', async (req, res) => {
 });
 
 // Játékállapot lekérése
-app.get('/api/session/:sessionId/state', async (req, res) => {
+app.get(basePath + '/api/session/:sessionId/state', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
@@ -70,28 +78,28 @@ app.get('/api/session/:sessionId/state', async (req, res) => {
 });
 
 // Léptetés leadása
-app.post('/api/session/:sessionId/move', async (req, res) => {
+app.post(basePath + '/api/session/:sessionId/move', async (req, res) => {
   const sessionId = req.params.sessionId;
   const { boardIndex, cellIndex, symbol } = req.body;
-
+  
   if (boardIndex < 0 || boardIndex > 8 || cellIndex < 0 || cellIndex > 8 || (symbol !== 'X' && symbol !== 'O')) {
     return res.status(400).json({ error: "Érvénytelen lépés paraméterek" });
   }
-
+  
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
     return res.status(404).json({ error: "A session nem található vagy lejárt" });
   }
   let state = JSON.parse(stateStr);
-
+  
   if (state.overallWinner) {
     return res.status(400).json({ error: "A játék már véget ért" });
   }
-
+  
   if (state.turn !== symbol) {
     return res.status(400).json({ error: "Nem az Ön köre" });
   }
-
+  
   if (state.activeBoard !== -1 && boardIndex !== state.activeBoard) {
     return res.status(400).json({ error: "Ezen a mini táblán nem lehet lépni" });
   }
@@ -99,9 +107,9 @@ app.post('/api/session/:sessionId/move', async (req, res) => {
   if (state.boards[boardIndex][cellIndex]) {
     return res.status(400).json({ error: "Ez a mező már foglalt" });
   }
-
+  
   state.boards[boardIndex][cellIndex] = symbol;
-
+  
   const board = state.boards[boardIndex];
   const winningCombos = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -114,7 +122,7 @@ app.post('/api/session/:sessionId/move', async (req, res) => {
       break;
     }
   }
-
+  
   let nextActive = cellIndex;
   const nextBoard = state.boards[nextActive];
   const isBoardFull = nextBoard.every(cell => cell !== null);
@@ -123,21 +131,21 @@ app.post('/api/session/:sessionId/move', async (req, res) => {
   } else {
     state.activeBoard = nextActive;
   }
-
+  
   state.turn = (state.turn === 'X') ? 'O' : 'X';
-
+  
   const overallWinner = checkOverallWinner(state.boardWinners);
   if (overallWinner) {
     state.overallWinner = overallWinner;
     state.activeBoard = -2;
   }
-
+  
   await redisClient.set(sessionId, JSON.stringify(state), { EX: 3600 });
   res.json(state);
 });
 
 // Visszaszámláló lekérése
-app.get('/api/session/:sessionId/timer', async (req, res) => {
+app.get(basePath + '/api/session/:sessionId/timer', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
@@ -149,7 +157,7 @@ app.get('/api/session/:sessionId/timer', async (req, res) => {
 });
 
 // Szimbólum választás (automatikus kiosztás: első játékos X, második O)
-app.post('/api/session/:sessionId/select-symbol', async (req, res) => {
+app.post(basePath + '/api/session/:sessionId/select-symbol', async (req, res) => {
   const sessionId = req.params.sessionId;
   const { playerId } = req.body;
   const stateStr = await redisClient.get(sessionId);
@@ -160,14 +168,14 @@ app.post('/api/session/:sessionId/select-symbol', async (req, res) => {
   if (!state.players) {
     state.players = {};
   }
-
+  
   if (state.players.X === playerId) {
     return res.json({ assignedSymbol: "X" });
   }
   if (state.players.O === playerId) {
     return res.json({ assignedSymbol: "O" });
   }
-
+  
   if (!state.players.X && !state.players.O) {
     state.players.X = playerId;
   } else if (state.players.X && !state.players.O) {
@@ -177,13 +185,13 @@ app.post('/api/session/:sessionId/select-symbol', async (req, res) => {
   } else {
     return res.status(400).json({ error: "Mindkét szimbólum már foglalt" });
   }
-
+  
   await redisClient.set(sessionId, JSON.stringify(state), { EX: 3600 });
   res.json({ assignedSymbol: state.players.X === playerId ? "X" : "O", state });
 });
 
 // Új játék indítása a sessionben
-app.post('/api/session/:sessionId/new-game', async (req, res) => {
+app.post(basePath + '/api/session/:sessionId/new-game', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
@@ -202,7 +210,7 @@ app.post('/api/session/:sessionId/new-game', async (req, res) => {
 });
 
 // Játékosok szimbólumainak megcserélése
-app.post('/api/session/:sessionId/swap-symbols', async (req, res) => {
+app.post(basePath + '/api/session/:sessionId/swap-symbols', async (req, res) => {
   const sessionId = req.params.sessionId;
   const stateStr = await redisClient.get(sessionId);
   if (!stateStr) {
@@ -222,8 +230,8 @@ app.post('/api/session/:sessionId/swap-symbols', async (req, res) => {
   res.json({ swapped: true, state });
 });
 
-// Útvonal a game.html kiszolgálásához
-app.get('/:sessionId', (req, res, next) => {
+// A game.html kiszolgálása: a basePath alatt, például: http://pmqxyz.hopto.org/tic-tac-toe/46205
+app.get(basePath + '/:sessionId', (req, res, next) => {
   if (req.params.sessionId.startsWith('api')) {
     return next();
   }
@@ -231,5 +239,5 @@ app.get('/:sessionId', (req, res, next) => {
 });
 
 app.listen(port, () => {
-  console.log(`Ultimate Tic Tac Toe szerver fut a ${port} porton`);
+  console.log(`Ultimate Tic Tac Toe szerver fut a ${port} porton, elérhető: http://<node-ip>${basePath}/`);
 });

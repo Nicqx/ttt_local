@@ -113,11 +113,11 @@
   </div>
 
   <script>
-    // A sessionId az URL utolsó része
+    // A sessionId az URL utolsó része (például: /tic-tac-toe/46205)
     let sessionId = window.location.pathname.split('/').pop();
     let gameState = null;
     let gameOverShown = false;
-    // isLocal flag: ha a backendben players objektum { X:"X", O:"O" } van, akkor local módban vagyunk
+    // isLocal flag: ha a backendben players objektum { X:"X", O:"O" } van, akkor local módot jelez
     let isLocal = false;
 
     // Remote módban tárolt játékosazonosító és szimbólum
@@ -131,7 +131,7 @@
     // Automatikus csatlakozás remote módban, ha még nincs playerSymbol
     async function autoJoinGame() {
       if (!playerSymbol) {
-        const response = await fetch(`/api/session/${sessionId}/select-symbol`, {
+        const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/select-symbol`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId })
@@ -160,11 +160,11 @@
 
     // "Új Session" gomb (remote módban)
     document.getElementById('newSessionBtn').addEventListener('click', async () => {
-      const response = await fetch('/api/new-session', { method: 'POST' });
+      const response = await fetch('/tic-tac-toe/api/new-session', { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         sessionId = data.sessionId;
-        window.location.href = "/" + sessionId;
+        window.location.href = "/tic-tac-toe/" + sessionId;
       } else {
         alert("Nem sikerült új sessiont indítani");
       }
@@ -172,7 +172,7 @@
 
     // "Új Játék (Reset)" gomb: üríti a táblát az aktuális sessionben
     document.getElementById('resetBoardBtn').addEventListener('click', async () => {
-      const response = await fetch(`/api/session/${sessionId}/new-game`, { method: 'POST' });
+      const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/new-game`, { method: 'POST' });
       if (response.ok) {
         gameState = await response.json();
         gameOverShown = false;
@@ -185,13 +185,12 @@
 
     // "Szimbólumok Csere" gomb: megcseréli a két játékos szimbólumát, majd kényszeríti, hogy a kezdő turn "X" legyen
     document.getElementById('swapSymbolsBtn').addEventListener('click', async () => {
-      const response = await fetch(`/api/session/${sessionId}/swap-symbols`, {
+      const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/swap-symbols`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       if (response.ok) {
         const data = await response.json();
-        // Remote módban frissítjük a saját szimbólumot a szerver állapota alapján
         if (!isLocal) {
           if (data.state.players.X === playerId) {
             playerSymbol = 'X';
@@ -234,7 +233,7 @@
     }
 
     async function fetchGameState() {
-      const response = await fetch(`/api/session/${sessionId}/state`);
+      const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/state`);
       if (response.ok) {
         gameState = await response.json();
         // Határozzuk meg, hogy local módban vagyunk-e:
@@ -243,7 +242,6 @@
         } else {
           isLocal = false;
         }
-        // Remote módban, ha már vannak játékosok, frissítsük a saját szimbólumot, ha szükséges:
         if (!isLocal && gameState.players) {
           if (gameState.players.X === playerId && playerSymbol !== "X") {
             playerSymbol = "X";
@@ -253,7 +251,6 @@
             localStorage.setItem('playerSymbol_' + sessionId, "O");
           }
         }
-        // Ha remote módban még nincs playerSymbol, automatikusan csatlakozunk
         if (!isLocal && !playerSymbol) {
           autoJoinGame();
         }
@@ -264,7 +261,7 @@
     }
 
     async function fetchTimer() {
-      const response = await fetch(`/api/session/${sessionId}/timer`);
+      const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/timer`);
       if (response.ok) {
         const data = await response.json();
         renderTimer(data.remainingMs);
@@ -310,7 +307,6 @@
         alert("A játék véget ért!");
         return;
       }
-      // Remote módban: csak akkor lehet lépni, ha az Ön szimbóluma egyezik a jelenlegi körrel
       if (!isLocal && gameState.turn !== playerSymbol) {
         alert("Nem az Ön köre!");
         return;
@@ -319,7 +315,7 @@
         alert("A kijelölt mini táblán kell lépni!");
         return;
       }
-      const response = await fetch(`/api/session/${sessionId}/move`, {
+      const response = await fetch(`/tic-tac-toe/api/session/${sessionId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boardIndex, cellIndex, symbol: isLocal ? gameState.turn : playerSymbol })
