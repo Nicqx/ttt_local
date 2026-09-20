@@ -19,6 +19,10 @@ const basePath = normalizeBasePath(process.env.BASE_PATH || '/tic-tac-toe');
 
 app.use(express.json());
 
+app.get('/livez', (req, res) => {
+  res.json({ ok: true });
+});
+
 const redisClient = createClient({
   url: redisUrl,
 });
